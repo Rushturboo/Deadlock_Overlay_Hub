@@ -274,17 +274,34 @@ function apply(st) {
     if (String(p.hero) !== c.heroSig) {
       c.heroSig = String(p.hero);
       if (p.hero) {
-        // a hero without art upstream (the three unreleased ones) falls back to a
-        // letter instead of a broken image icon
-        c.picImg.onerror = () => {
-          c.pic.classList.remove('on');
-          c.pic.innerHTML = '<span>' + String(p.heroName || '?').slice(0, 1) + '</span>';
+        // one hole, one portrait. the request happens once per hero, so a load that
+        // failed while the hub was restarting used to leave the hole empty until the
+        // page was reloaded: keep a letter up and retry every 15s (six times), which
+        // also covers the three unreleased heroes that have no art upstream
+        const initial = String(p.heroName || '?').slice(0, 1);
+        const hero = p.hero;
+        clearTimeout(c.heroTimer);
+        c.heroTries = 0;
+        const loadHero = () => {
+          const base = '/hero/' + hero + '.png';
+          c.pic.innerHTML = '<img alt="">';
+          c.picImg = c.pic.firstChild;
+          c.pic.classList.add('on');
+          c.picImg.onerror = () => {
+            c.picImg = null;
+            c.pic.classList.remove('on');
+            c.pic.innerHTML = '<span>' + initial + '</span>';
+            if (c.heroTries >= 6) return;
+            c.heroTries += 1;
+            c.heroTimer = setTimeout(() => {
+              if (String(c.heroSig) === String(hero)) loadHero();
+            }, 15000);
+          };
+          c.picImg.src = c.heroTries ? base + '?r=' + c.heroTries : base;
         };
-        c.pic.innerHTML = '<img alt="">';
-        c.picImg = c.pic.firstChild;
-        c.picImg.src = '/hero/' + p.hero + '.png';
-        c.pic.classList.add('on');
+        loadHero();
       } else {
+        clearTimeout(c.heroTimer);
         c.pic.innerHTML = '';
         c.picImg = null;
         c.pic.classList.remove('on');
