@@ -77,7 +77,7 @@ Four Browser sources, **not** "local file":
 | scoreboard | 940×160 | `http://127.0.0.1:8787/scoreboard.html` |
 | players | 1920×1080 | `http://127.0.0.1:8787/players.html` |
 | killfeed | 900×560 | `http://127.0.0.1:8787/killfeed.html` |
-| minimap | 340×340 | `http://127.0.0.1:8787/minimap.html` |
+| minimap<br />(This thing is developing and the effect is not so good now, i recommend to use the map in game) | 340×340 | `http://127.0.0.1:8787/minimap.html` |
 
 Tick **Shutdown source when not visible** off. If a page ever looks stale, the hub
 bumps a stamp whenever a widget file changes and the pages reload themselves; if you
@@ -104,7 +104,7 @@ edit `hub.py` itself, restart the hub.
 scoreboard order. Drag it anywhere (the position is saved), double click to close.
 
 When the game reshuffles the spectate order, hold `` ` `` (the key left of `1`) and
-press the two keys you want to swap; the strip only *watches* the keyboard
+press the two keys you want to swap **(We should do this because for now on we can only get what characters is in the game but the position from the observer control is not match to the window. So you should do this little work at the beginning of the game :D)** ; the strip only *watches* the keyboard
 (`GetAsyncKeyState`), so every key still reaches the game and other applications.
 
 ## notes from building it
