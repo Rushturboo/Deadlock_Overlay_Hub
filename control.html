@@ -20,6 +20,7 @@
   h1 { font-size: 16px; margin: 0; letter-spacing: .06em; }
   header .sub { color: var(--dim); font-size: 12px; }
   #quit { margin-left: auto; align-self: center; }
+  #quit.armed { background: #8a5a1e; border-color: #b07a2a; }
   .bye { padding: 72px 24px; color: var(--dim); }
   .bye h1 { color: var(--text); margin: 0 0 12px; }
   .bye p { margin: 0 0 8px; }
@@ -545,19 +546,34 @@ $('delayApply').onclick = async () => {
   await post('/api/config', { delayMs: v });
   $('delay').value = v;
 };
-$('scan').onclick = scan;
-$('mid').addEventListener('keydown', (e) => { if (e.key === 'Enter') start(); });
 
 // one click, nothing left running: the hub stops its streams, kills the bridge
 // (including one start-mem.cmd started in its own window) and exits.
+// no confirm() dialog here: browsers can suppress it for a page (and obs never
+// shows it), which made the button look dead. first click arms, second stops.
+let quitArmed = 0;
 $('quit').onclick = async () => {
-  if (!confirm('Stop everything?\n\nthis closes the hub and kills dl-live-bridge.exe.\nthe obs sources stay on their last frame.')) return;
   const btn = $('quit');
+  if (!quitArmed) {
+    btn.classList.add('armed');
+    btn.textContent = 'click again to stop';
+    quitArmed = setTimeout(() => {
+      quitArmed = 0;
+      btn.classList.remove('armed');
+      btn.textContent = 'Stop everything';
+    }, 4000);
+    return;
+  }
+  clearTimeout(quitArmed);
+  quitArmed = 0;
+  btn.classList.remove('armed');
   btn.disabled = true;
   btn.textContent = 'stopping…';
-  clearInterval(refreshTimer);
+  try { clearInterval(refreshTimer); } catch (e) { /* not started yet */ }
   try {
-    await fetch('/api/quit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    await fetch('/api/quit', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
   } catch (e) {
     // the hub may already be gone, which is the point
   }
