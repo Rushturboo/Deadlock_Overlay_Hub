@@ -5,6 +5,7 @@ version = 4
 [[package]]
 name = "deadlock-core"
 version = "0.1.0"
+source = "git+https://github.com/deadlock-plus/deadlock-rs?rev=8b408b9103a022e7bac620bfa4916778b8fdfaa1#8b408b9103a022e7bac620bfa4916778b8fdfaa1"
 dependencies = [
  "serde",
 ]
@@ -12,6 +13,7 @@ dependencies = [
 [[package]]
 name = "deadlock-memory"
 version = "0.1.0"
+source = "git+https://github.com/deadlock-plus/deadlock-rs?rev=8b408b9103a022e7bac620bfa4916778b8fdfaa1#8b408b9103a022e7bac620bfa4916778b8fdfaa1"
 dependencies = [
  "libc",
  "memchr",
@@ -22,6 +24,7 @@ dependencies = [
 [[package]]
 name = "deadlock-reader"
 version = "0.1.0"
+source = "git+https://github.com/deadlock-plus/deadlock-rs?rev=8b408b9103a022e7bac620bfa4916778b8fdfaa1#8b408b9103a022e7bac620bfa4916778b8fdfaa1"
 dependencies = [
  "deadlock-core",
  "deadlock-memory",

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deadlock broadcast hub.
+"""Deadlock overlay hub.
 
 One local process that reads the game through dl-live-bridge, folds the
 snapshot into a single state object, and serves the overlay pages.
@@ -540,7 +540,7 @@ class Store:
                 rows.append({
                     "ctrl": p.get("slot") if p.get("slot") is not None else p.get("controller"),
                     # the bridge reports a 64 bit pawn pointer; the entity index is the
-                    # low 14 bits, same rule the relay path uses
+                    # low 14 bits, the same rule the entity tables use
                     "pawn": (p.get("pawn_handle") % 16384) if isinstance(p.get("pawn_handle"), int) else None,
                     "handle": p.get("pawn"),
                     "key": pkey,
@@ -755,21 +755,21 @@ class Store:
                     "score": t.get("score") or 0,
                     "netWorth": sum(p["netWorth"] for p in players if p["team"] == tid),
                     # kills are summed by the bridge, but fall back to the player rows
-                    # for the relay path (and for a snapshot that left them out)
+                    # when a snapshot left that column out
                     "kills": (
                         t["kills"] if t.get("kills") is not None
                         else sum(p["kills"] for p in players if p["team"] == tid)
                     ),
-                    # null in relay mode: there is no object list in that feed
+                    # null when the snapshot carries no object list
                     "structuresDown": (self.struct.get(tid) or {}).get("down"),
                     "structuresTotal": (self.struct.get(tid) or {}).get("total"),
                     "structuresKnown": (self.struct.get(tid) or {}).get("known", True),
-                    # how many rejuv buffs this team is holding; None on the relay path
+                    # how many rejuv buffs this team is holding; None when unknown
                     "rejuv": t.get("rejuv"),
                 })
 
             clock = self.clock()
-            # the overlay runs `delayMs` behind the broadcast, so the match clock
+            # the overlay runs `delayMs` behind the game, so the match clock
             # has to be shifted back by the same amount or it won't agree with
             # the video the audience is watching
             if clock is not None:
@@ -1876,7 +1876,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     global HUB
-    ap = argparse.ArgumentParser(description="Deadlock broadcast hub (local memory bridge)")
+    ap = argparse.ArgumentParser(description="Deadlock overlay hub (local memory bridge)")
     ap.add_argument("--port", type=int, default=8787)
     ap.add_argument("--bridge", default="http://127.0.0.1:8788/",
                     help="url of dl-live-bridge, the process that reads the game")

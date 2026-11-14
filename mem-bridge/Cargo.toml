@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-deadlock-reader = { path = "../../Deadlock+SourceCode/deadlock-rs-8b408b9103a022e7bac620bfa4916778b8fdfaa1/deadlock-rs-8b408b9103a022e7bac620bfa4916778b8fdfaa1/crates/deadlock-reader", features = ["serde", "positions"] }
+# pinned to the revision this was developed against; cargo clones it on first build
+deadlock-reader = { git = "https://github.com/deadlock-plus/deadlock-rs", rev = "8b408b9103a022e7bac620bfa4916778b8fdfaa1", features = ["serde", "positions"] }
+# if you already have a checkout, deleting the line above and using a path is faster:
+# deadlock-reader = { path = "../deadlock-rs/crates/deadlock-reader", features = ["serde", "positions"] }
 serde_json = "1"
 
 [profile.release]
