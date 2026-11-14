@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Deadlock hub control</title>
+<style>
+  :root {
+    --bg: #0e1117; --panel: #151a22; --line: #232b36; --text: #dde4ee;
+    --dim: #8b95a3; --amber: #f0a13c; --sapphire: #58aaf0; --ok: #4fc27a; --bad: #e0524a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 13px/1.5 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  header {
+    display: flex; align-items: baseline; gap: 14px; padding: 16px 22px;
+    border-bottom: 1px solid var(--line);
+  }
+  h1 { font-size: 16px; margin: 0; letter-spacing: .06em; }
+  header .sub { color: var(--dim); font-size: 12px; }
+  #quit { margin-left: auto; align-self: center; }
+  .bye { padding: 72px 24px; color: var(--dim); }
+  .bye h1 { color: var(--text); margin: 0 0 12px; }
+  .bye p { margin: 0 0 8px; }
+  .bye code { color: var(--amber); }
+  main { display: grid; grid-template-columns: 420px 1fr; gap: 16px; padding: 16px 22px 40px; }
+  section {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    padding: 14px 16px; margin-bottom: 16px;
+  }
+  h2 {
+    font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--dim); margin: 0 0 12px; font-weight: 600;
+  }
+  label { display: block; font-size: 11px; color: var(--dim); margin-bottom: 4px; letter-spacing: .08em; }
+  input, select {
+    width: 100%; padding: 7px 9px; background: #0b0e13; color: var(--text);
+    border: 1px solid var(--line); border-radius: 4px; font: inherit;
+  }
+  input:focus, select:focus { outline: 1px solid #3a4757; }
+  .row { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 10px; }
+  .row > * { min-width: 0; }
+  .row .grow { flex: 1; }
+  button {
+    padding: 7px 14px; border-radius: 4px; border: 1px solid var(--line);
+    background: #1b2230; color: var(--text); font: inherit; cursor: pointer;
+  }
+  button:hover { background: #232c3c; }
+  button.primary { background: #2d6ea8; border-color: #3d8fd6; }
+  button.primary:hover { background: #3580c2; }
+  button.danger { background: #5a2320; border-color: #8c3a34; }
+  button.small { padding: 4px 9px; font-size: 11px; }
+  .stepper { display: flex; align-items: center; gap: 6px; }
+  .stepper b {
+    min-width: 22px; text-align: center; font-size: 16px; font-variant-numeric: tabular-nums;
+    padding: 2px 0; border-radius: 3px; background: #0b0e13; border: 1px solid var(--line);
+  }
+  .stepper button { padding: 4px 8px; line-height: 1; }
+
+
+  .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill {
+    padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line);
+    font-size: 11px; color: var(--dim); background: #10141b;
+  }
+  .pill b { color: var(--text); }
+  .pill.good { border-color: #2f5c42; color: #9fe0b8; }
+  .pill.bad { border-color: #6a2f2b; color: #f0a49e; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th {
+    text-align: left; font-weight: 500; font-size: 10px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--dim); padding: 4px 6px; border-bottom: 1px solid var(--line);
+  }
+  td { padding: 5px 6px; border-bottom: 1px solid #1b212b; white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover td { background: #1b2330; }
+  .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--dim); margin-right: 6px; }
+  .dot.open { background: var(--ok); }
+  .dot.closed, .dot.ended { background: var(--bad); }
+  .mono { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; }
+  .amber { color: var(--amber); }
+  .sapphire { color: var(--sapphire); }
+  .muted { color: var(--dim); }
+  .urls { display: flex; flex-direction: column; gap: 6px; }
+  .urlrow { display: flex; gap: 8px; align-items: center; }
+  .urlrow .mono { flex: 1; color: #b8c4d4; overflow: hidden; text-overflow: ellipsis; }
+  .err { color: #f0a49e; font-size: 12px; word-break: break-word; }
+  .roster td.name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+  /* custom name per player: empty = keep whatever the game calls them */
+  .roster input.cname {
+    width: 130px; padding: 3px 6px; font: inherit; font-size: 12px;
+    color: var(--fg); background: rgba(255, 255, 255, .05);
+    border: 1px solid rgba(255, 255, 255, .14); border-radius: 3px;
+  }
+  .roster input.cname:focus { outline: none; border-color: var(--accent); background: rgba(255, 255, 255, .09); }
+</style>
+</head>
+<body>
+<header>
+  <h1>DEADLOCK HUB</h1>
+  <span class="sub">OBS 浏览器源固定指向下面的地址，hub 自动跟随本机对局</span>
+  <button class="danger" id="quit" title="stop the hub and kill the bridge">Stop everything</button>
+</header>
+
+<main>
+  <div>
+    <section>
+      <h2>Match</h2>
+      <div class="row">
+        <div class="grow">
+          <label>the hub follows the game automatically — no match id to type</label>
+          <div class="muted">start a match in deadlock and this page catches up by itself</div>
+        </div>
+        <button class="danger" id="stop" title="stop reading the game">Pause</button>
+      </div>
+      <div class="row">
+        <div class="grow">
+          <label>match title (line above the clock)</label>
+          <input id="title" placeholder="GRAND FINAL" maxlength="48">
+        </div>
+      </div>
+      <div class="row">
+        <div class="grow">
+          <label>team amber</label>
+          <input id="t0" value="Hidden King">
+        </div>
+        <div class="grow">
+          <label>team sapphire</label>
+          <input id="t1" value="Arch Mother">
+        </div>
+      </div>
+      <div class="row">
+        <div style="width:96px">
+          <label>best of</label>
+          <select id="bo">
+            <option value="1">bo1</option>
+            <option value="3" selected>bo3</option>
+            <option value="5">bo5</option>
+          </select>
+        </div>
+        <div style="width:132px">
+          <label>series wins a</label>
+          <div class="stepper">
+            <button class="small" id="w0minus">−</button>
+            <b id="w0val">0</b>
+            <button class="small" id="w0plus">+</button>
+          </div>
+        </div>
+        <div style="width:132px">
+          <label>series wins b</label>
+          <div class="stepper">
+            <button class="small" id="w1minus">−</button>
+            <b id="w1val">0</b>
+            <button class="small" id="w1plus">+</button>
+          </div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="grow">
+          <label>logo a (path under overlay/)</label>
+          <input id="logo0" placeholder="logos/T1.png">
+        </div>
+        <div class="grow">
+          <label>logo b (path under overlay/)</label>
+          <input id="logo1" placeholder="logos/BLG.png">
+        </div>
+      </div>
+      <div class="row" style="margin-bottom:0">
+        <button id="apply">Apply</button>
+        <span class="muted" id="applyNote" style="font-size:11px"></span>
+      </div>
+      <div class="row" style="margin-bottom:0">
+        <div class="grow">
+          <label>players layout</label>
+          <span class="muted" style="font-size:11px;display:block;margin-top:2px">
+            compact = squares with the ability panel, and back
+          </span>
+        </div>
+        <button id="layout">players: full bars</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Hotkeys</h2>
+      <div class="muted" style="font-size:11px;margin-bottom:8px">
+        these fire while the game window has focus, so the operator never has to leave the game
+      </div>
+      <div class="row" style="margin-bottom:6px">
+        <div class="grow">
+          <label>toggle players layout</label>
+          <input id="hk_compact" placeholder="NumpadAdd">
+        </div>
+        <button id="hkApply" class="small">Apply</button>
+      </div>
+      <div class="muted mono" id="hkState" style="font-size:11px">not registered yet</div>
+    </section>
+
+    <section>
+      <h2>Keys window</h2>
+      <div class="muted" style="font-size:11px;margin-bottom:8px">
+        the strip that floats over the game: one cell per spectate key, portrait only.
+        drag it anywhere, double click it to close
+      </div>
+      <div class="row">
+        <div class="grow muted mono" id="keysState" style="font-size:11px">not running</div>
+        <button id="keysShow" class="small">restart</button>
+        <button id="keysHide" class="small">hide</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Status</h2>
+      <div class="pills" id="pills" style="margin-bottom:10px"></div>
+      <div class="err" id="err"></div>
+    </section>
+
+    <section>
+      <h2>Sync</h2>
+      <div class="row" style="margin-bottom:6px">
+        <div style="width:130px">
+          <label>overlay delay (ms)</label>
+          <input id="delay" type="number" step="50" value="0">
+        </div>
+        <button id="delayApply" class="small">Apply</button>
+      </div>
+      <div class="muted mono" id="smooth" style="font-size:11px">no data</div>
+    </section>
+
+    <section>
+      <h2>OBS browser sources</h2>
+      <div class="urls" id="urls"></div>
+    </section>
+
+  </div>
+
+  <div>
+    <section>
+      <h2>Streams</h2>
+      <table>
+        <thead><tr><th>query</th><th>state</th><th>reconnect</th><th>silent</th><th>last error</th></tr></thead>
+        <tbody id="streams"><tr><td colspan="5" class="muted">idle</td></tr></tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Roster (entity mapping)</h2>
+      <table class="roster">
+        <thead><tr><th>team</th><th>ctrl</th><th>pawn</th><th>name</th><th>hero</th><th>lvl</th><th>map</th><th>custom name</th></tr></thead>
+        <tbody id="roster"><tr><td colspan="8" class="muted">no match running</td></tr></tbody>
+      </table>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const ORIGIN = location.origin;
+let lastStamp = null;
+
+function post(path, body) {
+  return fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  }).then((r) => r.json());
+}
+
+async function apply() {
+  await post('/api/config', {
+    title: $('title').value.trim(),
+    t0: $('t0').value.trim() || 'Hidden King',
+    t1: $('t1').value.trim() || 'Arch Mother',
+    logo0: $('logo0').value.trim(),
+    logo1: $('logo1').value.trim(),
+    ...seriesPayload(),
+  });
+  $('applyNote').textContent = 'saved';
+  setTimeout(() => { $('applyNote').textContent = ''; }, 1500);
+}
+
+// the series is hand kept: bo decides how many boxes the bar draws, wins are clicks
+function seriesPayload() {
+  return {
+    bo: Number($('bo').value) || 3,
+    w0: Number($('w0val').textContent) || 0,
+    w1: Number($('w1val').textContent) || 0,
+  };
+}
+
+function winsNeeded(bo) {
+  return Math.max(1, Math.floor((Number(bo) || 3) / 2) + 1);
+}
+
+function setWins(side, value) {
+  const need = winsNeeded($('bo').value);
+  const cur = Number($('w' + side + 'val').textContent) || 0;
+  const next = Math.max(0, Math.min(need, cur + value));
+  $('w' + side + 'val').textContent = String(next);
+  return next;
+}
+
+async function bumpWin(side, delta) {
+  const next = setWins(side, delta);
+  // clamp the other side too, a shorter series must not leave impossible wins behind
+  setWins(side === '0' ? '1' : '0', 0);
+  await post('/api/config', {
+    bo: Number($('bo').value) || 3,
+    w0: Number($('w0val').textContent) || 0,
+    w1: Number($('w1val').textContent) || 0,
+  }).then(hydrateSeries);
+  $('applyNote').textContent = 'saved';
+  setTimeout(() => { $('applyNote').textContent = ''; }, 1200);
+  return next;
+}
+
+function hydrateSeries(payload) {
+  const c = (payload && payload.config) || null;
+  const s = (payload && payload.series) || (c ? { bo: c.bo, a: c.w0, b: c.w1 } : {});
+  if (s.bo) $('bo').value = String(s.bo);
+  if (s.a != null) $('w0val').textContent = String(s.a);
+  if (s.b != null) $('w1val').textContent = String(s.b);
+}
+
+const URLS = [
+  ['scoreboard', '/scoreboard.html'],
+  ['players', '/players.html'],
+  ['killfeed', '/killfeed.html'],
+];
+
+function renderUrls() {
+  $('urls').innerHTML = URLS.map(([name, path]) =>
+    '<div class="urlrow"><span class="muted" style="width:78px">' + name + '</span>' +
+    '<span class="mono">' + ORIGIN + path + '</span>' +
+    '<button class="small" data-copy="' + ORIGIN + path + '">copy</button></div>').join('');
+  $('urls').querySelectorAll('[data-copy]').forEach((b) => {
+    b.onclick = () => {
+      navigator.clipboard.writeText(b.dataset.copy).then(() => {
+        b.textContent = 'ok';
+        setTimeout(() => { b.textContent = 'copy'; }, 1200);
+      });
+    };
+  });
+}
+
+const PHASE_TEXT = {
+  idle: 'idle', resolving: 'getting broadcast url', live: 'live',
+stalled: 'stalled — no rows for 20s', ended: 'match ended', error: 'error',
+};
+
+function renderStreams(streams) {
+  if (!streams || !streams.length) {
+    $('streams').innerHTML = '<tr><td colspan="5" class="muted">idle</td></tr>';
+    return;
+  }
+  $('streams').innerHTML = streams.map((s) =>
+    '<tr><td class="mono">' + s.name + '</td>' +
+    '<td><span class="dot ' + s.state + '"></span>' + s.state + '</td>' +
+    '<td>' + s.reconnects + '</td>' +
+    '<td>' + (s.silentFor == null ? '-' : s.silentFor + 's') + '</td>' +
+    '<td class="muted mono">' + (s.lastError || '') + '</td></tr>').join('');
+}
+
+function fallbackRoster(players) {
+  if (!players || !players.length) return null;
+  return players.map((p) => ({
+    key: p.key, team: p.team, ctrl: p.ctrl, pawn: p.pawn, name: p.name,
+    rawName: p.rawName || p.name,
+    hero: p.heroName || p.hero, level: p.level, verified: p.verified !== false,
+  }));
+}
+
+// the roster is rebuilt every second, so the custom-name inputs are updated in
+// place and never replaced: replacing them would drop the caret mid-typing.
+let rosterSig = '';
+const rosterCells = new Map();
+
+function renderRoster(roster, phase) {
+  if (!roster || !roster.length) {
+    const why = phase === 'live' ? 'waiting for players…' : 'no match running';
+    if (rosterSig !== 'empty') {
+      $('roster').innerHTML = '<tr><td colspan="8" class="muted">' + why + '</td></tr>';
+      rosterSig = 'empty';
+      rosterCells.clear();
+    }
+    return;
+  }
+  const sig = roster.map((p) => p.key || (p.team + ':' + p.ctrl)).join(',');
+  if (sig !== rosterSig) {
+    $('roster').innerHTML = roster.map((p) => {
+      const key = p.key || (p.team + ':' + p.ctrl);
+      return '<tr data-key="' + key + '">' +
+        '<td class="' + (p.team === 2 ? 'amber' : 'sapphire') + '">' + (p.team === 2 ? 'A' : 'S') + '</td>' +
+        '<td class="mono">' + p.ctrl + '</td>' +
+        '<td class="mono">' + (p.pawn == null ? '-' : p.pawn) + '</td>' +
+        '<td class="name"></td><td class="hero"></td><td class="lvl"></td><td class="map"></td>' +
+        '<td><input class="cname" maxlength="20" placeholder="in-game name"></td>' +
+        '</tr>';
+    }).join('');
+    rosterCells.clear();
+    Array.prototype.forEach.call($('roster').querySelectorAll('tr[data-key]'), (tr) => {
+      const input = tr.querySelector('.cname');
+      const key = tr.getAttribute('data-key');
+      input.addEventListener('change', () => saveName(key, input.value));
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
+      rosterCells.set(key, { tr, input });
+    });
+    rosterSig = sig;
+  }
+  roster.forEach((p) => {
+    const key = p.key || (p.team + ':' + p.ctrl);
+    const cell = rosterCells.get(key);
+    if (!cell) return;
+    const q = (sel) => cell.tr.querySelector(sel);
+    q('.name').textContent = p.rawName || p.name;
+    q('.hero').textContent = p.hero;
+    q('.lvl').textContent = p.level;
+    q('.map').innerHTML = p.verified
+      ? '<span style="color:var(--ok)">ok</span>'
+      : '<span style="color:var(--bad)">mismatch</span>';
+    // never stomp what the operator is currently typing
+    if (document.activeElement !== cell.input) {
+      const custom = (customNames && customNames[key]) || '';
+      if (cell.input.value !== custom) cell.input.value = custom;
+      cell.input.placeholder = p.rawName || p.name;
+    }
+  });
+}
+
+let customNames = {};
+
+// the hotkey box follows the hub's stored value, and the line under it tells you
+// whether the OS actually gave us that combo (another program may already own it)
+function renderHotkeys(cfg, hk) {
+  const stored = (cfg && cfg.hotkeys && cfg.hotkeys.compact) || '';
+  if (document.activeElement !== $('hk_compact')) $('hk_compact').value = stored;
+  const live = (hk && hk.active && hk.active.compact) || '';
+  const err = (hk && hk.errors && hk.errors.compact) || '';
+  $('hkState').textContent = err
+    ? 'not registered: ' + err
+    : (live ? 'registered: ' + live : (stored ? 'waiting for the hub…' : 'unbound'));
+  $('hkState').style.color = err ? 'var(--bad)' : '';
+}
+
+// the strip lives in its own process; this line only reports whether it is up
+function renderKeys(st) {
+  const on = !!(st && st.keys && st.keys.running);
+  $('keysState').textContent = on ? 'running' : 'not running';
+  $('keysState').style.color = on ? '' : 'var(--bad)';
+}
+
+function saveName(key, value) {
+  post('/api/config', { names: { [key]: value } }).then((res) => {
+    if (res && res.config && res.config.names) customNames = res.config.names;
+    refresh();
+  }).catch(() => {});
+}
+
+
+function renderPills(st) {
+  const cls = st.phase === 'live' ? 'good' : (st.phase === 'error' || st.phase === 'ended') ? 'bad' : '';
+  const bits = [];
+  bits.push('<span class="pill ' + cls + '"><b>' + (PHASE_TEXT[st.phase] || st.phase) + '</b></span>');
+  if (st.matchId) bits.push('<span class="pill">match <b>' + st.matchId + '</b></span>');
+  if (st.clock != null) {
+    const s = Math.max(0, Math.floor(st.clock));
+    bits.push('<span class="pill">clock <b>' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + '</b></span>');
+  }
+  $('pills').innerHTML = bits.join('');
+  $('err').textContent = st.error || '';
+  if (st.delayMs != null && document.activeElement !== $('delay')) {
+    $('delay').value = st.delayMs;
+  }
+  hydrateLayout(st.config || { compact: st.compact });
+}
+
+// players.html has two shapes; the button flips the hub flag and the widget
+// animates between the long bars and the squares
+function hydrateLayout(cfg) {
+  const on = !!(cfg && cfg.compact);
+  $('layout').textContent = 'players: ' + (on ? 'compact' : 'full bars');
+  $('layout').classList.toggle('primary', on);
+}
+
+async function toggleLayout() {
+  const on = $('layout').textContent.indexOf('compact') !== -1;
+  const next = !on;
+  await post('/api/config', { compact: next });
+  hydrateLayout({ compact: next });
+}
+
+async function refresh() {
+  let st;
+  try {
+    st = await (await fetch('/api/status', { cache: 'no-store' })).json();
+  } catch (e) {
+    $('err').textContent = 'hub not reachable';
+    return;
+  }
+  // the hub bumps this whenever a file under overlay/ changes, so an open panel
+  // never keeps running yesterday's markup (OBS browser sources cache hard)
+  if (st.stamp && lastStamp && st.stamp !== lastStamp) { location.reload(); return; }
+  if (st.stamp) lastStamp = st.stamp;
+  renderPills(st);
+  renderStreams(st.streams);
+  const cfg = st.config || {};
+  if (cfg.names && typeof cfg.names === 'object') customNames = cfg.names;
+  renderHotkeys(cfg, st.hotkeys);
+  renderKeys(st);
+  renderRoster(st.roster || fallbackRoster(st.players), st.phase);
+  hydrateSeries(st);
+  if (!$('title').value && cfg.title) $('title').value = cfg.title;
+  if (!$('logo0').value && cfg.logo0) $('logo0').value = cfg.logo0;
+  if (!$('logo1').value && cfg.logo1) $('logo1').value = cfg.logo1;
+  if (st.teams) {
+    if (!$('t0').value) $('t0').value = st.teams[0].name;
+    if (!$('t1').value) $('t1').value = st.teams[1].name;
+  }
+}
+
+
+$('stop').onclick = () => post('/api/stop').then(refresh);
+$('apply').onclick = apply;
+$('layout').onclick = toggleLayout;
+$('hkApply').onclick = () => {
+  post('/api/config', { hotkeys: { compact: $('hk_compact').value } })
+    .then(() => refresh()).catch(() => {});
+};
+$('keysShow').onclick = () => post('/api/keys', { show: true }).then(refresh).catch(() => {});
+$('keysHide').onclick = () => post('/api/keys', { show: false }).then(refresh).catch(() => {});
+$('w0plus').onclick = () => bumpWin('0', 1);
+$('w0minus').onclick = () => bumpWin('0', -1);
+$('w1plus').onclick = () => bumpWin('1', 1);
+$('w1minus').onclick = () => bumpWin('1', -1);
+$('bo').onchange = async () => {
+  // a shorter series may not leave more wins behind than it can hold
+  setWins('0', 0);
+  setWins('1', 0);
+  await post('/api/config', seriesPayload()).then(hydrateSeries);
+};
+$('delayApply').onclick = async () => {
+  const v = Number($('delay').value) || 0;
+  await post('/api/config', { delayMs: v });
+  $('delay').value = v;
+};
+$('scan').onclick = scan;
+$('mid').addEventListener('keydown', (e) => { if (e.key === 'Enter') start(); });
+
+// one click, nothing left running: the hub stops its streams, kills the bridge
+// (including one start-mem.cmd started in its own window) and exits.
+$('quit').onclick = async () => {
+  if (!confirm('Stop everything?\n\nthis closes the hub and kills dl-live-bridge.exe.\nthe obs sources stay on their last frame.')) return;
+  const btn = $('quit');
+  btn.disabled = true;
+  btn.textContent = 'stopping…';
+  clearInterval(refreshTimer);
+  try {
+    await fetch('/api/quit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  } catch (e) {
+    // the hub may already be gone, which is the point
+  }
+  document.body.innerHTML =
+    '<div class="bye"><h1>hub stopped</h1>' +
+    '<p>the bridge is gone too — check task manager if you want to be sure.</p>' +
+    '<p>close this tab. run <code>start-mem.cmd</code> when you need it again.</p></div>';
+};
+
+renderUrls();
+refresh();
+const refreshTimer = setInterval(refresh, 1000);
+</script>
+</body>
+</html>

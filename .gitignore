@@ -1,0 +1,16 @@
+# python
+__pycache__/
+*.pyc
+
+# rust build output
+mem-bridge/target/
+
+# everything under data/ is generated: the hub downloads the portraits, item icons and
+# the map plate from the public asset endpoints on first run, and the rest is local
+# state (window position, pid). nothing in here belongs in git - it is also all
+# third party art, which we would rather not redistribute.
+data/*
+!data/README.md
+
+# logs and scratch
+*.log

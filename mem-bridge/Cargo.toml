@@ -1,0 +1,11 @@
+[package]
+name = "dl-live-bridge"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+deadlock-reader = { path = "../../Deadlock+SourceCode/deadlock-rs-8b408b9103a022e7bac620bfa4916778b8fdfaa1/deadlock-rs-8b408b9103a022e7bac620bfa4916778b8fdfaa1/crates/deadlock-reader", features = ["serde", "positions"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3

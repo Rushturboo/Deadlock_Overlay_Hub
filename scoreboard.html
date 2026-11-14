@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Deadlock scoreboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 940px; height: 160px; overflow: hidden; background: transparent; }
+  body {
+    font: 14px/1.2 "Bahnschrift", "DIN Alternate", "Segoe UI", sans-serif; color: #e9edf2;
+  }
+
+  .board {
+    position: relative; display: grid; grid-template-columns: 1fr 168px 1fr;
+    /* the canvas stays 940x160 so the OBS source needs no change; only the bar got
+       shorter, and it keeps the old top edge so nothing has to be repositioned */
+    margin: 10px 12px; height: 112px; background: rgba(14, 17, 22, .92);
+    border: 1px solid rgba(255, 255, 255, .10); border-radius: 4px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .55); overflow: hidden;
+  }
+  .side { display: flex; align-items: center; gap: 8px; padding: 0 14px; min-width: 0; }
+  .side.b { flex-direction: row-reverse; }
+
+  /* series wins, one box per game the side still needs */
+  .wins { display: flex; flex-direction: column; gap: 4px; flex: none; }
+  .wins i {
+    display: block; width: 8px; height: 14px; border-radius: 2px;
+    background: rgba(255, 255, 255, .12); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12);
+    transition: background .2s ease;
+  }
+  .wins.amber i.on { background: #f0a13c; box-shadow: 0 0 8px rgba(240, 161, 60, .55); }
+  .wins.sapphire i.on { background: #58aaf0; box-shadow: 0 0 8px rgba(88, 170, 240, .55); }
+
+  /* crest: the image when the panel points at one, else the team's initials */
+  .logo {
+    flex: none; width: 44px; height: 44px; border-radius: 3px; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255, 255, 255, .06); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .10);
+    font-size: 15px; font-weight: 700; letter-spacing: .04em; color: #b6c0cc;
+  }
+  .logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  .meta { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1 1 auto; }
+  /* the buff marker rides next to the name, so it never floats off between the
+     stats: reversed on the right so it still points at the team it belongs to */
+  .side.b .meta { flex-direction: row-reverse; }
+  .tname {
+    font-size: 17px; font-weight: 600; letter-spacing: .03em; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 100%;
+  }
+  .amber { color: #f0a13c; }
+  .sapphire { color: #58aaf0; }
+
+  /* stat strip: tower count and souls sit between the name and the kills.
+     a hairline between them keeps four numbers from reading as one blob */
+  .stat {
+    flex: none; display: flex; align-items: center; gap: 4px; color: #9aa6b4;
+    font-size: 14px; font-variant-numeric: tabular-nums; letter-spacing: .02em;
+    border-left: 1px solid rgba(255, 255, 255, .08); padding-left: 7px;
+  }
+  .stat svg { width: 14px; height: 14px; flex: none; opacity: .85; }
+  .stat b { color: #e9edf2; font-weight: 600; }
+  .stat.dim { opacity: .45; }
+  .stat.maybe b::after { content: "?"; font-size: 11px; vertical-align: 3px; opacity: .7; }
+
+  .kills {
+    flex: none; font-size: 28px; font-weight: 700; line-height: 1;
+    font-variant-numeric: tabular-nums; letter-spacing: -.5px;
+  }
+
+  .center {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2px; border-left: 1px solid rgba(255, 255, 255, .08);
+    border-right: 1px solid rgba(255, 255, 255, .08); background: rgba(255, 255, 255, .02);
+  }
+  /* the event line the operator types in the panel; the row keeps its height when
+     it is empty so the clock never jumps between matches */
+  .title {
+    font-size: 11px; letter-spacing: .18em; color: #8b96a3; text-transform: uppercase;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+    min-height: 13px; line-height: 13px;
+  }
+  .clock { position: relative; font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  /* the dot is taken out of the flow on purpose: if it sat inline it would push the
+     text right and the colon would stop being the exact centre of the column */
+  .clock.live::before {
+    content: ""; position: absolute; left: -17px; top: 50%; margin-top: -5px;
+    width: 7px; height: 7px; border-radius: 50%; background: #e0524a;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .25 } }
+  .state { font-size: 10px; letter-spacing: .22em; color: #79838f; text-transform: uppercase; }
+
+  /* urn / rift / midboss: only interesting in the last minute, so they are
+     hidden the rest of the time and the centre stays quiet */
+  .timers { display: flex; gap: 4px; justify-content: center; min-height: 14px; flex-wrap: wrap; }
+  .chip {
+    display: flex; align-items: center; gap: 3px; padding: 1px 4px; border-radius: 3px;
+    font-size: 9px; font-weight: 600; letter-spacing: .06em; white-space: nowrap;
+    background: rgba(255, 255, 255, .07); color: #cfd6df; text-transform: uppercase;
+  }
+  .chip b { font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+  .chip.soon { background: rgba(240, 161, 60, .18); color: #f5b96a; }
+  .chip.hot { background: rgba(224, 82, 74, .20); color: #ff8a82; }
+
+  /* bottom strip: the two colours always meet at the centre column, and each fill grows
+     outward from that middle line by how much of the map's gold that side actually
+     owns. anchoring to the middle is the point - a strip split by raw ratio drifts
+     away from the clock and looks broken. */
+  .bars {
+    position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
+    display: grid; grid-template-columns: 1fr 168px 1fr;
+    /* one continuous track all the way across: the clock column sits on top of it,
+       so the strip never looks like two floating sticks */
+    background: rgba(255, 255, 255, .13);
+    box-shadow: inset 0 1px 0 rgba(0, 0, 0, .45);
+  }
+  .bars span { display: flex; }
+  .bars span.a { justify-content: flex-end; }
+  .bars span.s { justify-content: flex-start; }
+  .bars i { display: block; height: 100%; transition: width .25s ease-out; }
+  .bars i.a { background: #f0a13c; }
+  .bars i.s { background: #58aaf0; }
+
+  /* rejuv: only there while the team is holding the buff, so it reads as news
+     rather than as another permanent column */
+  .rejuv { display: none; align-items: center; gap: 3px; flex: none; }
+  .rejuv.on { display: flex; }
+  .rejuv i {
+    display: block; width: 9px; height: 9px; border-radius: 2px; transform: rotate(45deg);
+    background: #45d97a; box-shadow: 0 0 8px rgba(69, 217, 122, .75);
+  }
+  .rejuv b {
+    font-size: 12px; font-weight: 600; color: #45d97a; font-variant-numeric: tabular-nums;
+  }
+  .rejuv b[data-one="1"] { display: none; }
+
+  .offline .board { opacity: .35; }
+</style>
+</head>
+<body>
+<div class="board">
+  <div class="side a">
+    <div class="wins amber" id="winA"></div>
+    <div class="logo" id="logoA">HK</div>
+    <div class="meta">
+      <div class="tname amber" id="na">Hidden King</div>
+      <div class="rejuv" id="rjA" title="rejuvenator"><i></i><b>1</b></div>
+    </div>
+    <div class="stat tower" id="towerA" title="towers knocked over">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1 3 4v3h1v6h2V8h4v5h2V7h1V4L8 1zm0 2.2 3 1.8V6H5V5l3-1.8z"/></svg>
+      <b id="ta">0</b>
+    </div>
+    <div class="stat souls" id="soulA" title="net worth">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.4"/><circle cx="8" cy="8" r="1.8" fill="currentColor" stroke="none"/></svg>
+      <b id="ga">0</b>
+    </div>
+    <div class="kills amber" id="ka">0</div>
+  </div>
+
+  <div class="center">
+    <div class="title" id="title"></div>
+    <div class="clock" id="clock">--:--</div>
+    <div class="state" id="phase">LIVE</div>
+    <div class="timers" id="timers"></div>
+  </div>
+
+  <div class="side b">
+    <div class="wins sapphire" id="winB"></div>
+    <div class="logo" id="logoB">AM</div>
+    <div class="meta">
+      <div class="tname sapphire" id="nb">Arch Mother</div>
+      <div class="rejuv" id="rjB" title="rejuvenator"><i></i><b>1</b></div>
+    </div>
+    <div class="stat tower" id="towerB" title="towers knocked over">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1 3 4v3h1v6h2V8h4v5h2V7h1V4L8 1zm0 2.2 3 1.8V6H5V5l3-1.8z"/></svg>
+      <b id="tb">0</b>
+    </div>
+    <div class="stat souls" id="soulB" title="net worth">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.4"/><circle cx="8" cy="8" r="1.8" fill="currentColor" stroke="none"/></svg>
+      <b id="gb">0</b>
+    </div>
+    <div class="kills sapphire" id="kb">0</div>
+  </div>
+
+  <div class="bars">
+    <span class="a"><i class="a" id="barA" style="width:50%"></i></span>
+    <span></span>
+    <span class="s"><i class="s" id="barB" style="width:50%"></i></span>
+  </div>
+</div>
+
+<script src="dlock.js"></script>
+<script>
+const { esc, fmtGold, fmtClock } = DL;
+const el = (id) => document.getElementById(id);
+
+const PHASE_TEXT = {
+  live: 'live', stalled: 'stalled', ended: 'match ended', resolving: 'connecting',
+  idle: 'no match', error: 'error', bridge_down: 'bridge down', pregame: 'pregame',
+  game_closed: 'game closed', menus: 'menus', hideout: 'hideout',
+};
+
+function initials(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '\u2014';
+  if (parts.length > 1) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return parts[0].slice(0, 2).toUpperCase();
+}
+
+// one box per game the side still needs (bo1 -> 1, bo3 -> 2, bo5 -> 3)
+function winsNeeded(bo) {
+  const n = Number(bo) || 3;
+  return Math.max(1, Math.floor(n / 2) + 1);
+}
+
+function renderWins(box, need, wins, cls) {
+  if (box.dataset.need !== String(need)) {
+    box.innerHTML = new Array(need).fill('<i></i>').join('');
+    box.dataset.need = String(need);
+  }
+  const kids = box.children;
+  for (let i = 0; i < kids.length; i++) {
+    kids[i].classList.toggle('on', i < wins);
+  }
+}
+
+function renderLogo(box, team) {
+  const want = team.logo || '';
+  const shown = box.dataset.src || '';
+  if (want !== shown) {
+    if (!want) {
+      box.dataset.src = '';
+      box.textContent = initials(team.name);
+    } else {
+      box.dataset.src = want;
+      box.innerHTML = '<img alt="">';
+      const img = box.firstChild;
+      img.onerror = () => { box.dataset.src = ''; box.textContent = initials(team.name); };
+      img.src = '/' + want.replace(/^\/+/, '');
+    }
+  } else if (!want && box.dataset.src === '' && box.textContent !== initials(team.name)) {
+    box.textContent = initials(team.name);
+  }
+}
+
+// the number is how many of *their* towers we knocked over; the relay feed has no
+// object list at all, which is a dash rather than a zero
+function renderTowers(node, num, team) {
+  const down = team.structuresDown;
+  const dim = down == null;
+  node.classList.toggle('dim', dim);
+  node.classList.toggle('maybe', !dim && team.structuresKnown === false);
+  num.textContent = dim ? '\u2013' : String(down);
+}
+
+function paint(prefix, team, wins, bo) {
+  renderWins(el('win' + prefix.toUpperCase()), winsNeeded(bo), wins || 0,
+             prefix === 'a' ? 'amber' : 'sapphire');
+  renderLogo(el('logo' + prefix.toUpperCase()), team);
+  el('n' + prefix).textContent = team.name || '';
+  renderTowers(el('tower' + prefix.toUpperCase()), el('t' + prefix), team);
+  el('g' + prefix).textContent = fmtGold(team.netWorth || 0);
+  el('k' + prefix).textContent = String(team.kills == null ? 0 : team.kills);
+}
+
+function apply(st) {
+  const s = st.series || { bo: 3, a: 0, b: 0 };
+  const teams = st.teams || [];
+  const a = teams[0] || { name: 'amber', netWorth: 0, kills: 0 };
+  const b = teams[1] || { name: 'sapphire', netWorth: 0, kills: 0 };
+
+  paint('a', a, s.a, s.bo);
+  paint('b', b, s.b, s.bo);
+
+  const paintRejuv = (node, team) => {
+    const n = Number(team.rejuv || 0);
+    node.classList.toggle('on', n > 0);
+    const b = node.querySelector('b');
+    b.textContent = n > 1 ? String(n) : '';
+    b.dataset.one = n > 1 ? '0' : '1';
+  };
+  paintRejuv(el('rjA'), a);
+  paintRejuv(el('rjB'), b);
+
+  const total = ((a.netWorth || 0) + (b.netWorth || 0)) || 1;
+  // each side fills its own half from the outer edge inward, so the gap in the
+  // middle stays welded to the centre column instead of drifting with the economy
+  el('barA').style.width = ((a.netWorth || 0) / total * 100).toFixed(2) + '%';
+  el('barB').style.width = ((b.netWorth || 0) / total * 100).toFixed(2) + '%';
+
+  const clock = el('clock');
+  clock.textContent = fmtClock(st.clock);
+  clock.classList.toggle('live', st.phase === 'live' || st.phase === 'stalled');
+
+  el('title').textContent = st.title || '';
+
+  el('phase').textContent = PHASE_TEXT[st.phase] || st.phase || '';
+
+  renderTimers(st.timers || {});
+}
+
+// the three neutral-objective clocks. nothing shows until something is either
+// already up or about to come up inside a minute.
+function mmss(sec) {
+  const s = Math.max(0, Math.round(sec));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+function renderTimers(t) {
+  const out = [];
+  const push = (label, value, cls) => out.push(
+    '<span class="chip ' + cls + '">' + label + ' <b>' + value + '</b></span>');
+
+  const mid = t.midboss || {};
+  // only while the boss is taking damage: hp that keeps moving says more than a
+  // "present" flag or a spawn countdown, which is what used to leave a 0:00 chip
+  if (mid.changing && mid.hpMax) {
+    const pct = Math.round((mid.hp || 0) / mid.hpMax * 100);
+    push('MID', pct + '%', 'hot');
+  }
+
+  for (const [label, key] of [['URN', 'urn'], ['RIFT', 'rift']]) {
+    const b = t[key] || {};
+    if (b.present) push(label, 'UP', 'hot');
+    else if (b.in != null && b.in > 0.5 && b.in <= 60) push(label, mmss(b.in), b.in <= 15 ? 'hot' : 'soon');
+  }
+
+  const box = el('timers');
+  const html = out.join('');
+  if (box.dataset.html !== html) {
+    box.innerHTML = html;
+    box.dataset.html = html;
+  }
+}
+
+DL.start(apply);
+</script>
+</body>
+</html>

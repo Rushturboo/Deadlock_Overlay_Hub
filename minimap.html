@@ -1,0 +1,349 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>minimap</title>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: #e8edf2;
+  }
+
+  .wrap {
+    position: fixed;
+    right: var(--right, 28px);
+    bottom: var(--bottom, 28px);
+    width: var(--size, 340px);
+    height: var(--size, 340px);
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 42%, #241c17 0%, #171210 55%, #0a0807 100%);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .6), inset 0 0 0 1px rgba(226, 208, 178, .22);
+    overflow: hidden;
+  }
+
+  .plate, .frame {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    border-radius: 50%;
+  }
+  /* the game only ships the street shape as a black mask on transparency, so it is
+     used as a css mask and painted the teal-grey the in-game map uses */
+  .plate {
+    background: radial-gradient(circle at 50% 50%, #37463f 0%, #2c3833 55%, #222c29 100%);
+    -webkit-mask: url("/data/map/mid.png") center / 100% 100% no-repeat;
+    mask: url("/data/map/mid.png") center / 100% 100% no-repeat;
+  }
+  .frame {
+    pointer-events: none;
+    opacity: .55;
+    filter: brightness(2.4) sepia(.45) saturate(1.4);
+  }
+
+  /* darken the rim so the plate fades into the game picture instead of sitting
+     on it like a sticker */
+  .wrap::after {
+    content: "";
+    position: absolute; inset: 0;
+    border-radius: 50%;
+    pointer-events: none;
+    background: radial-gradient(circle at 50% 50%,
+      transparent 58%, rgba(0, 0, 0, .38) 82%, rgba(0, 0, 0, .72) 100%);
+  }
+
+  .grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, .05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, .05) 1px, transparent 1px);
+    background-size: 25% 25%;
+  }
+  body.has-plate .grid { display: none; }
+
+  .dot {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    will-change: left, top;
+  }
+  .obj { z-index: 1; }
+  .p { z-index: 3; }
+  .mid { z-index: 4; }
+  .urn { z-index: 5; }
+
+  /* objectives */
+  .obj {
+    width: 10px; height: 10px;
+    background: #6b737d;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .85), 0 0 6px rgba(0, 0, 0, .5);
+    transform: translate(-50%, -50%) rotate(45deg);
+    border-radius: 1px;
+    opacity: .9;
+  }
+  .obj.amber { background: #e2542a; box-shadow: 0 0 0 1px rgba(0, 0, 0, .85), 0 0 7px rgba(226, 84, 42, .55); }
+  .obj.sapphire { background: #35b8d8; box-shadow: 0 0 0 1px rgba(0, 0, 0, .85), 0 0 7px rgba(53, 184, 216, .5); }
+  .obj.patron { width: 15px; height: 15px; opacity: 1; }
+  .obj.soft { opacity: .45; }
+  .obj.dead { background: #3a4048 !important; opacity: .35; }
+
+  /* neutral monsters / urn */
+  .mid {
+    width: 15px; height: 15px; border-radius: 50%;
+    background: radial-gradient(circle, #ff8a72 0 40%, #c33a22 41% 70%, #4a100c 71% 100%);
+    box-shadow: 0 0 10px rgba(226, 84, 42, .9), 0 0 0 1px rgba(0, 0, 0, .7);
+    animation: breathe 2.4s ease-in-out infinite;
+  }
+  @keyframes breathe { 50% { box-shadow: 0 0 16px rgba(255, 110, 80, 1), 0 0 0 1px rgba(0, 0, 0, .7); } }
+  .urn {
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #ffd94a;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, .65), 0 0 10px rgba(255, 217, 74, .9);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse { 50% { transform: translate(-50%, -50%) scale(1.35); } }
+
+  /* players */
+  .p {
+    width: 24px; height: 24px; border-radius: 50%;
+    overflow: hidden;
+    box-shadow: 0 0 0 2px #777, 0 2px 6px rgba(0, 0, 0, .8);
+    background: #14181d;
+    transition: opacity .2s ease, filter .2s ease;
+  }
+  .p img { width: 100%; height: 100%; display: block; object-fit: cover; }
+  .p.amber { box-shadow: 0 0 0 2px #f0873c, 0 2px 6px rgba(0, 0, 0, .8); }
+  .p.sapphire { box-shadow: 0 0 0 2px #48c6e8, 0 2px 6px rgba(0, 0, 0, .8); }
+  .p.dead { filter: grayscale(1); opacity: .35; }
+
+  .note {
+    position: absolute; left: 8px; right: 8px; bottom: 8px;
+    font-size: 11px; line-height: 1.35; text-align: center;
+    color: #9aa4b0;
+    background: rgba(11, 14, 18, .82);
+    border-radius: 4px; padding: 5px 8px;
+  }
+  .note b { color: #e8edf2; font-weight: 600; }
+  .note[hidden] { display: none; }
+</style>
+</head>
+<body>
+
+<div class="wrap" id="wrap">
+  <div class="grid"></div>
+  <div class="plate" id="plate" hidden></div>
+  <img class="frame" id="frame" alt="" hidden>
+  <div id="marks"></div>
+  <div class="note" id="note" hidden></div>
+</div>
+
+<script src="dlock.js"></script>
+<script>
+const { esc, mapPct } = DL;
+const el = (id) => document.getElementById(id);
+
+// ?size=340&right=28&bottom=28
+(function anchors() {
+  const q = new URLSearchParams(location.search);
+  const set = (name, css) => {
+    const raw = q.get(name);
+    if (raw === null || raw === '') return;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 0) {
+      document.documentElement.style.setProperty(css, n + 'px');
+    }
+  };
+  set('size', '--size');
+  set('right', '--right');
+  set('bottom', '--bottom');
+})();
+
+const ROLE = { patron: 'patron', shrine: 'soft', base_guardian: 'soft', walker: '' };
+
+let plateTried = false;
+function usePlate() {
+  if (plateTried) return;
+  plateTried = true;
+  const plate = el('plate');
+  const frame = el('frame');
+  // the plate is painted with css, the png only supplies the street shape as a mask,
+  // so we just need to know whether it loads before showing the layer
+  const probe = new Image();
+  probe.onload = () => { plate.hidden = false; document.body.classList.add('has-plate'); };
+  probe.onerror = () => { plate.hidden = true; };
+  probe.src = '/data/map/mid.png';
+  // the frame is decoration: a missing one must not blank the map
+  frame.onload = () => { frame.hidden = false; };
+  frame.onerror = () => { frame.hidden = true; };
+  frame.src = '/data/map/frame.png';
+}
+
+const seen = new Map();     // key -> element, so we never rebuild the DOM
+
+const SMOOTH = (function () {
+  const raw = new URLSearchParams(location.search).get('smooth');
+  if (raw === '0') return false;
+  if (raw === null || raw === '') return true;
+  return raw !== 'off';
+})();
+
+// every marker that is allowed to glide keeps its own little segment here:
+// ax/ay = where it was when the segment started, bx/by = where the hub says it is,
+// t = seconds spent on it. the loop below walks ax -> bx at a constant rate, so a
+// player crossing a lane moves in a straight line instead of hopping every poll.
+const motion = new Map();
+
+function slot(key, make) {
+  let node = seen.get(key);
+  if (!node) {
+    node = make();
+    node.dataset.key = key;
+    el('marks').appendChild(node);
+    seen.set(key, node);
+  }
+  return node;
+}
+
+function place(node, x, y, radius, glide) {
+  const p = mapPct(x, y, radius);
+  if (!p) { node.style.display = 'none'; return false; }
+  node.style.display = '';
+
+  const now = performance.now();
+  const m = motion.get(node);
+  const far = m && (Math.abs(p.left - m.bx) > 18 || Math.abs(p.top - m.by) > 18);
+  if (!glide || !m || far || !SMOOTH) {
+    // first sighting, a respawn across the map, or smoothing turned off: no slide
+    motion.set(node, { x: p.left, y: p.top, ax: p.left, ay: p.top, bx: p.left, by: p.top, t: 0, dur: 0, last: now });
+    node.style.left = p.left.toFixed(3) + '%';
+    node.style.top = p.top.toFixed(3) + '%';
+    return true;
+  }
+  if (Math.abs(p.left - m.bx) < 0.01 && Math.abs(p.top - m.by) < 0.01) return true;  // stood still
+
+  // the segment lasts about as long as this marker's own update interval, so the
+  // next position lands just as the glide finishes and the motion looks continuous
+  const dt = (now - m.last) / 1000;
+  m.dur = dt > 0.02 && dt < 0.6 ? dt : 0.2;
+  m.last = now;
+  m.ax = m.x; m.ay = m.y; m.bx = p.left; m.by = p.top;
+  m.t = 0;
+  startGlide();
+  return true;
+}
+
+let running = false;
+
+function startGlide() {
+  if (running) return;
+  running = true;
+  let prev = performance.now();
+  const step = (now) => {
+    const dt = Math.min(0.06, (now - prev) / 1000);
+    prev = now;
+    let busy = false;
+    motion.forEach((m, node) => {
+      if (!m.dur || m.t >= m.dur) return;
+      busy = true;
+      m.t += dt;
+      const f = m.t >= m.dur ? 1 : m.t / m.dur;
+      m.x = m.ax + (m.bx - m.ax) * f;
+      m.y = m.ay + (m.by - m.ay) * f;
+      node.style.left = m.x.toFixed(3) + '%';
+      node.style.top = m.y.toFixed(3) + '%';
+    });
+    if (busy) {
+      requestAnimationFrame(step);
+    } else {
+      // nothing is moving: stop burning frames, the next segment restarts the loop
+      running = false;
+    }
+  };
+  requestAnimationFrame(step);
+}
+
+function note(html) {
+  const n = el('note');
+  if (!html) { n.hidden = true; n.innerHTML = ''; return; }
+  n.hidden = false;
+  n.innerHTML = html;
+}
+
+function apply(st) {
+  usePlate();
+  const map = st.map || {};
+  const radius = map.radius || 10752;
+  const players = (st.players || []).filter((p) => p.x != null && p.y != null);
+
+  if (!st.players || !st.players.length) {
+    note('<b>waiting</b><br>start a match in deadlock');
+  } else if (!players.length && st.phase === 'bridge_down') {
+    note('<b>bridge down</b><br>start-mem.cmd restarts it automatically');
+  } else if (!players.length) {
+    note('waiting for the match');
+  } else {
+    note('');
+  }
+
+  // objectives
+  const alive = new Set();
+  (map.objectives || []).forEach((o, i) => {
+    const key = 'o' + i + ':' + o.kind + ':' + o.team;
+    alive.add(key);
+    const node = slot(key, () => {
+      const d = document.createElement('div');
+      d.className = 'dot obj';
+      return d;
+    });
+    node.className = 'dot obj ' + (o.team === 2 ? 'amber' : o.team === 3 ? 'sapphire' : '')
+      + (ROLE[o.kind] ? ' ' + ROLE[o.kind] : '');
+    if (!place(node, o.x, o.y, radius)) alive.delete(key);
+  });
+
+  if (map.midboss) {
+    const key = 'mid';
+    alive.add(key);
+    place(slot(key, () => {
+      const d = document.createElement('div');
+      d.className = 'dot mid';
+      return d;
+    }), map.midboss.x, map.midboss.y, radius);
+  }
+  if (map.urn) {
+    const key = 'urn';
+    alive.add(key);
+    place(slot(key, () => {
+      const d = document.createElement('div');
+      d.className = 'dot urn';
+      return d;
+    }), map.urn.x, map.urn.y, radius);
+  }
+
+  // players
+  players.forEach((p) => {
+    const key = 'p' + p.team + ':' + p.ctrl;
+    alive.add(key);
+    const node = slot(key, () => {
+      const d = document.createElement('div');
+      d.className = 'dot p';
+      d.innerHTML = '<img alt="">';
+      return d;
+    });
+    node.className = 'dot p ' + (p.team === 2 ? 'amber' : 'sapphire') + (p.alive === false ? ' dead' : '');
+    const img = node.firstChild;
+    const src = '/hero/' + p.hero + '.png';
+    if (img.getAttribute('src') !== src) img.src = src;
+    if (!place(node, p.x, p.y, radius, true)) alive.delete(key);
+  });
+
+  // drop markers for things that walked off the map (dead urls, ended match)
+  seen.forEach((node, key) => {
+    if (!alive.has(key)) {
+      node.remove();
+      seen.delete(key);
+      motion.delete(node);
+    }
+  });
+}
+
+DL.start(apply);
+</script>
+</body>
+</html>

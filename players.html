@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Deadlock players</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+  body { font: 13px/1.25 "Bahnschrift", "DIN Alternate", "Segoe UI", sans-serif; color: #e9edf2; }
+
+  .col {
+    position: fixed; top: var(--top, 160px);
+    width: 345px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .col.a { left: 28px; }
+  .col.b { right: 28px; }
+
+  /* flex, not grid: the right column is mirrored with row-reverse, which also puts
+     the portrait on the outer edge, so the bars collapse towards the screen edge */
+  .card {
+    position: relative; display: flex; align-items: center; gap: 10px;
+    /* width comes from .p so the shrink happens in one place and the right column
+       can stay pinned to the screen edge while it collapses */
+    width: 100%; height: 62px; padding: 0 12px;
+    background: rgba(13, 16, 21, .90); border-left: 3px solid var(--side, #555);
+    border-radius: 3px; box-shadow: 0 6px 18px rgba(0, 0, 0, .5); overflow: hidden;
+    transition: opacity .25s ease, filter .25s ease;
+  }
+  .col.b .card { flex-direction: row-reverse; margin-left: auto; border-left: 0; border-right: 3px solid var(--side, #555); }
+  .card.amber { --side: #f0a13c; }
+  .card.sapphire { --side: #58aaf0; }
+
+  .who {
+    flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px;
+    overflow: hidden; max-width: 400px;
+    transition: opacity .25s ease, max-width .42s cubic-bezier(.22, .8, .24, 1);
+  }
+  .col.b .who { align-items: flex-end; text-align: right; }
+  .line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  /* one reserved hole per player: the hero portrait fills it */
+  .pic {
+    flex: 0 0 auto; width: 38px; height: 38px; border-radius: 3px; overflow: hidden;
+    border: 1px dashed rgba(255, 255, 255, .22); background: rgba(255, 255, 255, .04);
+  }
+  .pic img { display: none; width: 100%; height: 100%; object-fit: cover; }
+  .pic span {
+    display: flex; align-items: center; justify-content: center; width: 100%; height: 100%;
+    font-size: 15px; font-weight: 700; color: #8d97a4;
+  }
+  .pic.on { border-color: transparent; }
+  .pic.on img { display: block; }
+  .name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hero { font-size: 10px; letter-spacing: .16em; text-transform: uppercase; color: #7b8592; white-space: nowrap; }
+
+  .stats {
+    flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+    font-variant-numeric: tabular-nums; overflow: hidden; max-width: 400px;
+    transition: opacity .25s ease, max-width .42s cubic-bezier(.22, .8, .24, 1);
+  }
+  .col.b .stats { align-items: flex-start; }
+  .nw { font-size: 14px; font-weight: 600; }
+  .kda { font-size: 10px; color: #7b8592; }
+
+  .hp { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%; background: rgba(255, 255, 255, .07); }
+  .hp i { display: block; height: 100%; width: 0; background: #4fc27a; transition: width .12s linear, background .3s ease; }
+  .hp i.warn { background: #e8b33e; }
+  .hp i.crit { background: #e0524a; }
+
+  .card.dead { opacity: .42; filter: grayscale(1); }
+  .card.dead .hp i { width: 0 !important; }
+
+  /* one stack per player: the bar itself, then the item strip underneath */
+  .p {
+    position: relative; display: flex; flex-direction: column; gap: 3px;
+    width: 345px;
+    transition: width .42s cubic-bezier(.22, .8, .24, 1);
+  }
+  .col.b .p { margin-left: auto; }
+  .slots { display: flex; gap: 3px; }
+  .col.b .slots { justify-content: flex-end; }
+  .slot {
+    position: relative; width: 21px; height: 21px; border-radius: 2px; overflow: hidden;
+    background: rgba(10, 13, 18, .62); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .13);
+  }
+  .slot img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+  /* --- the ability panel, only there in compact mode ------------------- */
+  /* it floats beside the card instead of sitting in the flow, so the long bars
+     keep exactly the spacing they had before this panel existed */
+  .abil {
+    position: absolute; left: calc(100% + 6px); top: 50%; transform: translateY(-50%);
+    display: flex; gap: 3px; height: 38px;
+    opacity: 0; visibility: hidden; pointer-events: none;
+    transition: opacity .28s ease;
+  }
+  .col.b .abil { left: auto; right: calc(100% + 6px); }
+  body.compact .abil { opacity: 1; visibility: visible; transition-delay: .12s; }
+  .cell {
+    position: relative; width: 38px; height: 38px; border-radius: 3px; overflow: hidden;
+    /* dark, not white-tinted: the widget sits on the game picture, and an empty
+       cell still has to read as a slot */
+    background: rgba(10, 13, 18, .62); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .13);
+  }
+  .cell.on { background: rgba(10, 13, 18, .92); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22); }
+  .cell img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .cell img:not([src]) { display: none; }
+  /* the ultimate has no icon in the data, so it gets a letter instead of a wrong
+     picture: R reads the same way the game does */
+  .cell.ult {
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: inset 0 0 0 1px rgba(255, 209, 102, .55);
+  }
+  /* the ultimate has no icon in the data, so it gets a letter; the cooldown wedge
+     is drawn ON TOP of it, so a cooling ult dims the letter instead of hiding it */
+  .cell.ult::after {
+    content: "U"; font-size: 14px; font-weight: 700; letter-spacing: .04em; color: #ffd166;
+    position: relative; z-index: 0; text-shadow: 0 1px 3px rgba(0, 0, 0, .9);
+  }
+  .cell.ult.ready { box-shadow: inset 0 0 0 1px rgba(255, 209, 102, .95), 0 0 9px rgba(255, 209, 102, .5); }
+  .cell.untrained { opacity: .35; }
+  /* the fan: a dark wedge over the icon, sized by how much cooldown is left.
+     the icon is pinned to the bottom of the stack so the wedge always paints
+     over it, whatever order the browser decides for in-flow content */
+  .cell img { position: relative; z-index: 0; }
+  .cell .fan { position: absolute; inset: 0; display: none; z-index: 2; }
+
+  /* compact: the bar shrinks to a square around the portrait, the text and the
+     item strip go away, and the ability row floats in beside it. the row keeps
+     its 86px height (card + item strip), so switching modes never moves a card. */
+  body.compact .p { width: 62px; height: 86px; justify-content: flex-start; }
+  body.compact .card { padding: 0; justify-content: center; }
+  /* same 38px portrait as the long bar; the square is 62px so it never changes
+     height either, which is what kept the portrait bobbing during the switch.
+     the square carries a 3px team bar on its outer edge, so the portrait is
+     nudged 4px inwards to sit optically in the middle instead of leaning out */
+  body.compact .pic { width: 38px; height: 38px; border-color: transparent; transform: translateX(var(--nudge, 8px)); }
+  body.compact .col.b .pic { transform: translateX(calc(-1 * var(--nudge, 4px))); }
+  /* the ability row hangs off the square's vertical centre (62 / 2) */
+  body.compact .abil { left: calc(100% + 8px); top: 31px; }
+  body.compact .col.b .abil { left: auto; right: calc(100% + 8px); top: 31px; }
+  body.compact .who, body.compact .stats { opacity: 0; max-width: 0; }
+  body.compact .slots { display: none; }
+
+  .offline .col { opacity: .3; }
+</style>
+</head>
+<body>
+<div class="col a" id="colA"></div>
+<div class="col b" id="colB"></div>
+
+<script src="dlock.js"></script>
+<script>
+const { esc, teamClass } = DL;
+const cols = { 2: document.getElementById('colA'), 3: document.getElementById('colB') };
+const cards = new Map();
+
+function makeCard(p) {
+  const wrap = document.createElement('div');
+  wrap.className = 'p';
+  const el = document.createElement('div');
+  el.className = 'card ' + teamClass(p.team);
+  el.innerHTML =
+    '<div class="pic"><img alt=""></div>' +
+    '<div class="who">' +
+      '<div class="line"><div class="name"></div></div>' +
+      '<div class="line"><div class="hero"></div></div>' +
+    '</div>' +
+    '<div class="stats"><div class="nw"></div><div class="kda"></div></div>' +
+    '<div class="hp"><i></i></div>';
+
+  const strip = document.createElement('div');
+  strip.className = 'slots';
+  const slots = [];
+  for (let i = 0; i < 12; i += 1) {
+    const s = document.createElement('i');
+    s.className = 'slot';
+    strip.appendChild(s);
+    slots.push(s);
+  }
+  wrap.appendChild(el);
+  wrap.appendChild(strip);
+
+  // five cells in a row: the ultimate, then the four active items a player can
+  // actually carry. the rest of the slots the game exposes are leftovers.
+  const abil = document.createElement('div');
+  abil.className = 'abil';
+  wrap.appendChild(abil);
+  const cells = [];
+  for (let i = 0; i < 5; i += 1) {
+    const cell = document.createElement('div');
+    cell.className = 'cell' + (i === 0 ? ' ult' : '');
+    cell.innerHTML = '<img alt=""><span class="fan"></span>';
+    abil.appendChild(cell);
+    cells.push({ el: cell, img: cell.querySelector('img'), fan: cell.querySelector('.fan') });
+  }
+
+  return {
+    el: wrap, card: el, slots, cells, sig: '', heroSig: '', cdSig: '',
+    pic: el.querySelector('.pic'),
+    picImg: el.querySelector('.pic img'),
+    name: el.querySelector('.name'),
+    hero: el.querySelector('.hero'),
+    nw: el.querySelector('.nw'),
+    kda: el.querySelector('.kda'),
+    bar: el.querySelector('.hp i'),
+  };
+}
+
+function drawCells(c, p, defs) {
+  const cd = p.cd || {};
+  const ult = cd.ult || {};
+  const sig = [p.hero, ult.remain, ult.total, ult.ready, ult.trained,
+    (cd.items || []).map((i) => (i.id || '') + ':' + i.remain + ':' + i.total).join(',')].join('|');
+  if (sig === c.cdSig) return;
+  c.cdSig = sig;
+
+  const paint = (cell, opts) => {
+    const { icon, remain, total, ready, trained } = opts;
+    cell.el.classList.toggle('ready', !!ready);
+    cell.el.classList.toggle('untrained', trained === false);
+    cell.el.classList.toggle('on', !!icon);
+    if (icon) {
+      if (cell.img.getAttribute('src') !== icon) cell.img.src = icon;
+    } else {
+      cell.img.removeAttribute('src');
+    }
+    // the fan covers the leftover cooldown, clockwise from 12 o'clock
+    const live = remain > 0 && total > 0;
+    cell.fan.style.display = live ? 'block' : 'none';
+    if (live) {
+      const deg = Math.max(0, Math.min(360, 360 * (remain / total))).toFixed(1);
+      cell.fan.style.background =
+        'conic-gradient(from 0deg, rgba(8,11,16,.92) 0deg ' + deg + 'deg, transparent ' + deg + 'deg)';
+    }
+    cell.el.title = opts.title || '';
+  };
+
+  paint(c.cells[0], {
+    icon: '',
+    remain: ult.remain, total: ult.total, ready: ult.ready, trained: ult.trained,
+    title: ult.remain > 0 ? 'ult ready in ' + ult.remain + 's' : 'ult ready',
+  });
+
+  const items = cd.items || [];
+  for (let i = 1; i < 5; i += 1) {
+    const it = items[i - 1];
+    if (!it) { paint(c.cells[i], { icon: '', remain: 0, total: 0, title: '' }); continue; }
+    const def = it.id != null ? defs[it.id] : null;
+    paint(c.cells[i], {
+      icon: def && def.i ? def.i + '?v=1' : '',
+      remain: it.remain, total: it.total, ready: !(it.remain > 0),
+      title: def && def.n ? def.n : (it.key || ''),
+    });
+  }
+}
+
+function apply(st) {
+  const defs = st.itemDefs || {};
+  document.body.classList.toggle('compact', !!st.compact);
+  const seen = new Set();
+  for (const p of st.players) {
+    const key = p.team + ':' + p.ctrl;
+    seen.add(key);
+    let c = cards.get(key);
+    if (!c) {
+      c = makeCard(p);
+      cards.set(key, c);
+      cols[p.team] && cols[p.team].appendChild(c.el);
+    }
+    if (c.el.parentNode !== cols[p.team] && cols[p.team]) cols[p.team].appendChild(c.el);
+
+    c.name.textContent = p.name || 'unknown';
+    c.hero.textContent = p.heroName + (p.verified ? '' : ' ?');
+    if (String(p.hero) !== c.heroSig) {
+      c.heroSig = String(p.hero);
+      if (p.hero) {
+        // a hero without art upstream (the three unreleased ones) falls back to a
+        // letter instead of a broken image icon
+        c.picImg.onerror = () => {
+          c.pic.classList.remove('on');
+          c.pic.innerHTML = '<span>' + String(p.heroName || '?').slice(0, 1) + '</span>';
+        };
+        c.pic.innerHTML = '<img alt="">';
+        c.picImg = c.pic.firstChild;
+        c.picImg.src = '/hero/' + p.hero + '.png';
+        c.pic.classList.add('on');
+      } else {
+        c.pic.innerHTML = '';
+        c.picImg = null;
+        c.pic.classList.remove('on');
+      }
+    }
+    c.nw.textContent = DL.fmtGold(p.netWorth);
+    c.kda.textContent = p.kills + '/' + p.deaths + '/' + p.assists;
+
+    const ratio = (p.hpMax > 0 && Number.isFinite(p.hp)) ? Math.min(p.hp / p.hpMax, 1) : 0;
+    c.bar.style.width = (ratio * 100).toFixed(1) + '%';
+    c.bar.className = ratio < 0.2 ? 'crit' : ratio < 0.45 ? 'warn' : '';
+    c.card.classList.toggle('dead', !p.alive);
+
+    drawCells(c, p, defs);
+
+    const items = p.items || [];
+    const sig = items.join(',');
+    if (sig !== c.sig) {
+      c.sig = sig;
+      c.slots.forEach((s, i) => {
+        const id = items[i];
+        const def = id != null ? defs[id] : null;
+        if (def && def.i) {
+          s.innerHTML = '<img src="' + DL.esc(def.i) + '?v=1" alt="">';
+          s.title = def.n || '';
+        } else {
+          s.innerHTML = '';
+          s.title = '';
+        }
+      });
+    }
+  }
+
+  for (const [key, c] of cards) {
+    if (!seen.has(key)) { c.el.remove(); cards.delete(key); }
+  }
+}
+
+// the top of the first card lines up with the bottom of scoreboard.html; move it
+// with ?top=NNN when the scoreboard sits somewhere other than the top edge
+const topPx = new URLSearchParams(location.search).get('top');
+if (topPx !== null && topPx !== '' && Number.isFinite(Number(topPx))) {
+  document.documentElement.style.setProperty('--top', Number(topPx) + 'px');
+}
+
+DL.start(apply);
+</script>
+</body>
+</html>
