@@ -176,10 +176,10 @@
         <div class="grow">
           <label>players layout</label>
           <span class="muted" style="font-size:11px;display:block;margin-top:2px">
-            compact = squares with the ability panel, and back
+            teamfight = squares with the ability panel, normal = the long bars, and back
           </span>
         </div>
-        <button id="layout">players: full bars</button>
+        <button id="layout">players: normal</button>
       </div>
     </section>
 
@@ -477,15 +477,15 @@ function renderPills(st) {
 }
 
 // players.html has two shapes; the button flips the hub flag and the widget
-// animates between the long bars and the squares
+// animates between the long bars (normal) and the squares (teamfight)
 function hydrateLayout(cfg) {
   const on = !!(cfg && cfg.compact);
-  $('layout').textContent = 'players: ' + (on ? 'compact' : 'full bars');
+  $('layout').textContent = 'players: ' + (on ? 'teamfight' : 'normal');
   $('layout').classList.toggle('primary', on);
 }
 
 async function toggleLayout() {
-  const on = $('layout').textContent.indexOf('compact') !== -1;
+  const on = $('layout').textContent.indexOf('teamfight') !== -1;
   const next = !on;
   await post('/api/config', { compact: next });
   hydrateLayout({ compact: next });

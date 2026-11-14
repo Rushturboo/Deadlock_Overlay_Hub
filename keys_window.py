@@ -44,8 +44,8 @@ KEY_FG = "#ffd166"
 EMPTY_BG = "#171b21"
 ARM_ON = "#7a5a1e"      # strip border while the swap key is held
 ARM_PICK = "#ffd166"    # the first key picked
-MODE_BARS = "#9aa6b4"   # the "players: bars" tile
-MODE_COMPACT = "#45d97a"  # compact squares show amber->green so it reads instantly
+MODE_BARS = "#9aa6b4"   # the "players: normal" tile
+MODE_COMPACT = "#45d97a"  # teamfight squares go green so it reads instantly
 
 
 def slots(state):
@@ -210,13 +210,13 @@ class Strip:
 
         # a leading tile that says which player layout is on screen: the same
         # strip is used in both modes, and the operator needs to know at a glance
-        # whether the long bars or the compact squares are on air right now
+        # whether the long bars (normal) or the squares (teamfight) are on air right now
         mode = tk.Frame(frame, bg=BG, padx=int(6 * s), pady=int(2 * s),
                         highlightthickness=1, highlightbackground=BG)
         mode.grid(row=0, column=0, padx=(0, int(GAP * s / 2)))
         tk.Label(mode, text="players", bg=BG, fg=KEY_FG,
                  font=("Bahnschrift", int(9 * s))).pack(pady=(int(22 * s), 0))
-        self.mode_label = tk.Label(mode, text="BARS", bg=BG, fg=MODE_BARS,
+        self.mode_label = tk.Label(mode, text="NORMAL", bg=BG, fg=MODE_BARS,
                                    font=("Bahnschrift", int(13 * s), "bold"))
         self.mode_label.pack(pady=(0, int(22 * s)))
         self.mode_box = mode
@@ -332,7 +332,7 @@ class Strip:
                 cell["img"] = img
                 cell["art"].configure(image=img)
         compact = bool(state.get("compact"))
-        want = "COMPACT" if compact else "BARS"
+        want = "TEAMFIGHT" if compact else "NORMAL"
         if self.mode_label.cget("text") != want:
             self.mode_label.configure(text=want,
                                       fg=MODE_COMPACT if compact else MODE_BARS)

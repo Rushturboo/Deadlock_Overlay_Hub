@@ -24,7 +24,7 @@ the overlays follow it.
 | `hub.py` | the local server: reads the bridge, keeps the state, serves the pages, owns the hotkey and the floating strip |
 | `mem-bridge/` | Rust program that reads `deadlock.exe` memory and exposes one JSON snapshot on `127.0.0.1:8788` |
 | `scoreboard.html` | 940×160 top bar: series wins, crests, team names, towers, souls, kills, clock, objective chips, rejuv marker |
-| `players.html` | 1920×1080 two columns of 6: portrait, name, hero, souls, KDA, health, 12 item slots, and a compact mode with ult + active item cooldowns |
+| `players.html` | 1920×1080 two columns of 6: portrait, name, hero, souls, KDA, health, 12 item slots, and a `teamfight` mode with ult + active item cooldowns |
 | `killfeed.html` | 900×560 corner feed: kill / died / most kills lines |
 | `minimap.html` | 340×340 drawn map: player portraits with smooth motion, objectives, midboss, soul urn |
 | `keys_window.py` | floating strip over the game: spectate key `1…0 - =` next to each player's portrait |
@@ -88,7 +88,8 @@ edit `hub.py` itself, restart the hub.
 - **match** — title line above the clock, team names, best-of, series wins, crest paths
   (relative to this folder, e.g. `logos/T1.png`), a **Pause** button that stops reading
   the game.
-- **players layout** — flips `players.html` between long bars and the compact squares
+- **players layout** — flips `players.html` between `normal` (long bars) and
+  `teamfight` (squares with the ult + active item cooldowns)
   with the ability panel (also on the `NumpadAdd` hotkey).
 - **hotkeys** — one global hotkey, registered with `RegisterHotKey`, so it works with
   the game in front. Empty the box to unbind.
